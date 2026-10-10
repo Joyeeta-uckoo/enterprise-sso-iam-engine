@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>IAM Single Sign-On Portal</title>
+    <style>
+        body { font-family: Arial, sans-serif; background: #121212; color: #fff; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; }
+        .card { background: #1e1e1e; padding: 30px; border-radius: 8px; width: 350px; box-shadow: 0 4px 10px rgba(0,0,0,0.5); }
+        h2 { text-align: center; margin-bottom: 20px; color: #00e676; }
+        input, select, button { width: 100%; padding: 10px; margin: 8px 0; border-radius: 4px; border: 1px solid #333; box-sizing: border-box; }
+        input, select { background: #2a2a2a; color: #fff; }
+        button { background: #00e676; color: #000; font-weight: bold; border: none; cursor: pointer; }
+        button:hover { background: #00c853; }
+        .toggle { text-align: center; font-size: 0.85em; margin-top: 15px; cursor: pointer; color: #80d8ff; }
+        .msg { text-align: center; font-size: 0.9em; margin-top: 10px; }
+    </style>
+</head>
+<body>
+    <div class="card">
+        <h2 id="form-title">SSO Login</h2>
+        <div id="form-body">
+            <input type="email" id="email" placeholder="Email Address" required>
+            <input type="password" id="password" placeholder="Password" required>
+            <input type="text" id="username" placeholder="Username" style="display:none;">
+            <select id="role" style="display:none;">
+                <option value="user">User Role</option>
+                <option value="admin">Admin Role</option>
+            </select>
+            <button id="submit-btn" onclick="handleAuth()">Sign In</button>
+        </div>
+        <div class="msg" id="msg"></div>
+        <div class="toggle" id="toggle-btn" onclick="toggleForm()">Need an account? Register</div>
+    </div>
+
+    <script>
+        let isLogin = true;
+
+        function toggleForm() {
+            isLogin = !isLogin;
+            document.getElementById('form-title').innerText = isLogin ? 'SSO Login' : 'SSO Register';
+            document.getElementById('username').style.display = isLogin ? 'none' : 'block';
+            document.getElementById('role').style.display = isLogin ? 'none' : 'block';
+            document.getElementById('submit-btn').innerText = isLogin ? 'Sign In' : 'Create Account';
+            document.getElementById('toggle-btn').innerText = isLogin ? 'Need an account? Register' : 'Have an account? Login';
+            document.getElementById('msg').innerText = '';
+        }
+
+        async function handleAuth() {
+            const email = document.getElementById('email').value;
+            const password = document.getElementById('password').value;
+            const msg = document.getElementById('msg');
+            msg.innerText = '';
+
+            if (isLogin) {
+                const res = await fetch('/api/login', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ email, password })
+                });
+                const data = await res.json();
+                if (res.ok) {
+                    localStorage.setItem('sso_token', data.access_token);
+                    localStorage.setItem('sso_refresh', data.refresh_token);
+                    window.location.href = '/dashboard';
+                } else {
+                    msg.style.color = '#ff5252';
+                    msg.innerText = data.message;
+                }
+            } else {
+                const username = document.getElementById('username').value;
+                const role = document.getElementById('role').value;
+                const res = await fetch('/api/register', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ username, email, password, role })
+                });
+                const data = await res.json();
+                msg.style.color = res.ok ? '#00e676' : '#ff5252';
+                msg.innerText = data.message;
+                if (res.ok) toggleForm();
+            }
+        }
+    </script>
+</body>
+</html>

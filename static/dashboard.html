@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>IAM SSO & OIDC Enterprise Dashboard</title>
+    <style>
+        body { font-family: Arial, sans-serif; background: #121212; color: #fff; padding: 30px; }
+        .container { max-width: 900px; margin: 0 auto; background: #1e1e1e; padding: 25px; border-radius: 8px; }
+        header { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #333; padding-bottom: 15px; }
+        button { background: #ff5252; color: #fff; border: none; padding: 8px 14px; border-radius: 4px; cursor: pointer; }
+        .card { background: #2a2a2a; padding: 18px; margin-top: 18px; border-radius: 6px; }
+        pre { background: #121212; padding: 12px; border-radius: 4px; color: #00e676; overflow-x: auto; }
+        table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+        th, td { text-align: left; padding: 8px; border-bottom: 1px solid #444; font-size: 0.88em; }
+        th { color: #80d8ff; }
+        .admin-section { border: 1px solid #ff5252; }
+        .oidc-link { display: inline-block; background: #00e676; color: #000; font-weight: bold; padding: 8px 12px; border-radius: 4px; text-decoration: none; margin-top: 8px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h2>IAM SSO Engine & OIDC Identity Provider</h2>
+            <button onclick="logout()">Logout Session</button>
+        </header>
+
+        <div class="card">
+            <h3>Active Token Identity Claims</h3>
+            <pre id="user-claims">Loading token claims...</pre>
+        </div>
+
+        <div class="card">
+            <h3>Active Sessions & Connected Devices</h3>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Session ID</th>
+                        <th>IP Address</th>
+                        <th>User Agent</th>
+                        <th>Created At</th>
+                        <th>Action</th>
+                    </tr>
+                </thead>
+                <tbody id="session-rows"></tbody>
+            </table>
+        </div>
+
+        <div class="card">
+            <h3>Test OpenID Connect (OIDC) SSO Flow</h3>
+            <p style="font-size:0.9em; color:#ccc;">Simulate logging into a third-party client application via this SSO Identity Provider:</p>
+            <a class="oidc-link" href="/oauth/authorize?client_id=demo_client_app&redirect_uri=http://localhost:5001/oauth/callback/demo&response_type=code" target="_blank">Launch OIDC SSO Flow</a>
+        </div>
+
+        <div class="card admin-section" id="admin-card" style="display:none;">
+            <h3 style="color:#ff5252;">Admin Audit Logs & Security Portal</h3>
+            <pre id="admin-logs">Loading audit logs...</pre>
+        </div>
+    </div>
+
+    <script>
+        let token = localStorage.getItem('sso_token');
+        const refreshToken = localStorage.getItem('sso_refresh');
+
+        if (!token) window.location.href = '/';
+
+        async function attemptTokenRefresh() {
+            if (!refreshToken) return false;
+            const res = await fetch('/api/refresh', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ refresh_token: refreshToken })
+            });
+            if (res.ok) {
+                const data = await res.json();
+                token = data.access_token;
+                localStorage.setItem('sso_token', token);
+                return true;
+            }
+            return false;
+        }
+
+        async function loadDashboard() {
+            let res = await fetch('/api/user/profile', {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            
+            if (res.status === 401) {
+                const refreshed = await attemptTokenRefresh();
+                if (refreshed) {
+                    res = await fetch('/api/user/profile', {
+                        headers: { 'Authorization': `Bearer ${token}` }
+                    });
+                } else {
+                    logout();
+                    return;
+                }
+            }
+
+            const data = await res.json();
+            document.getElementById('user-claims').innerText = JSON.stringify(data.user_info, null, 2);
+
+            loadSessions();
+
+            if (data.user_info.role === 'admin') {
+                document.getElementById('admin-card').style.display = 'block';
+                const adminRes = await fetch('/api/admin/audit-logs', {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+                const adminData = await adminRes.json();
+                document.getElementById('admin-logs').innerText = JSON.stringify(adminData.audit_logs, null, 2);
+            }
+        }
+
+        async function loadSessions() {
+            const res = await fetch('/api/user/sessions', {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            const data = await res.json();
+            const tbody = document.getElementById('session-rows');
+            tbody.innerHTML = '';
+
+            data.sessions.forEach(s => {
+                const tr = document.createElement('tr');
+                tr.innerHTML = `
+                    <td>${s.id}</td>
+                    <td>${s.ip_address || '127.0.0.1'}</td>
+                    <td>${(s.user_agent || 'Browser').substring(0, 35)}...</td>
+                    <td>${new Date(s.created_at).toLocaleString()}</td>
+                    <td><button onclick="terminateSession(${s.id})">Revoke</button></td>
+                `;
+                tbody.appendChild(tr);
+            });
+        }
+
+        async function terminateSession(sessionId) {
+            await fetch(`/api/user/sessions/${sessionId}`, {
+                method: 'DELETE',
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            loadSessions();
+        }
+
+        async function logout() {
+            if (token) {
+                await fetch('/api/logout', {
+                    method: 'POST',
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+            }
+            localStorage.removeItem('sso_token');
+            localStorage.removeItem('sso_refresh');
+            window.location.href = '/';
+        }
+
+        loadDashboard();
+    </script>
+</body>
+</html>

@@ -1,0 +1,33 @@
+version: '3.8'
+
+services:
+  db:
+    image: mysql:8.0
+    container_name: sso_mysql_db
+    environment:
+      MYSQL_ROOT_PASSWORD: rootpassword
+      MYSQL_DATABASE: sso_db
+      MYSQL_USER: sso_user
+      MYSQL_PASSWORD: sso_pass
+    ports:
+      - "3307:3306"
+    volumes:
+      - ./schema.sql:/docker-entrypoint-initdb.d/schema.sql
+      - mysql_data:/var/lib/mysql
+
+  web:
+    build: .
+    container_name: sso_flask_app
+    ports:
+      - "5001:5000"
+    environment:
+      - DB_HOST=db
+      - DB_USER=sso_user
+      - DB_PASS=sso_pass
+      - DB_NAME=sso_db
+      - JWT_SECRET=super-secret-iam-key-change-in-prod
+    depends_on:
+      - db
+
+volumes:
+  mysql_data:
